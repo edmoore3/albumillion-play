@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Albumillion</title>
+<meta name="description" content="A daily music game. Seven questions, the same seven for everyone, and the answer nobody else thinks of is worth the most.">
+<style>
+:root {
+  --ground:#E6E3DC; --surface:#F3F1EC; --sunk:#DCD8CF; --ink:#1A1714;
+  --dim:#6A625A; --rule:#CBC5BA; --accent:#23486B; --disc:#221E1A;
+  --groove:#3A342E; --tick:#A9A29A; --warn:#8A5A16; --ok:#2F6B4F;
+  --t5:#A8321D; --t4:#C2652B; --t3:#B8873A; --t2:#97794A; --t1:#6E675E; --t0:#A9A29A;
+  --mono:"IBM Plex Mono",Consolas,monospace;
+  --sans:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+  --serif:Newsreader,Georgia,serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:#141210; --surface:#1F1B18; --sunk:#100E0C; --ink:#EDE8DF;
+    --dim:#9A9189; --rule:#332D28; --accent:#8FB4D8; --disc:#0C0A09;
+    --groove:#221E1B; --tick:#5A534C; --warn:#D2A05A; --ok:#63A783;
+    --t5:#D14A2E; --t4:#DF8036; --t3:#D0A24A; --t2:#B0905C; --t1:#7E766B; --t0:#5A534C;
+  }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--serif); font-size:16px; line-height:1.55; }
+.wrap { max-width:68rem; margin:0 auto; padding:clamp(1rem,3vw,1.75rem); display:grid; gap:1.25rem; }
+header { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; align-items:baseline;
+  border-bottom:2px solid var(--ink); padding-bottom:.8rem; }
+h1 { font-family:var(--sans); font-size:1.7rem; margin:0; letter-spacing:-.02em; }
+h2 { font-family:var(--sans); font-size:clamp(1.35rem,3.4vw,1.8rem); margin:.2rem 0 .8rem;
+  letter-spacing:-.015em; text-wrap:balance; }
+h3 { font-family:var(--sans); font-size:1rem; margin:0 0 .6rem; }
+.eyebrow, .dim { font-family:var(--mono); font-size:.7rem; letter-spacing:.06em; color:var(--dim); margin:0; }
+.eyebrow { text-transform:uppercase; }
+nav { display:flex; gap:.5rem; margin-left:auto; flex-wrap:wrap; }
+.cols { display:grid; gap:1.5rem; grid-template-columns:minmax(0,1fr); }
+@media (min-width:60rem) { .cols { grid-template-columns:minmax(0,1fr) 20rem; } }
+.stack { display:grid; gap:1.25rem; align-content:start; min-width:0; }
+section, .ask { background:var(--surface); border:1px solid var(--rule); padding:1.1rem 1.25rem; min-width:0; }
+.row { display:flex; gap:.5rem; flex-wrap:wrap; }
+input { font-family:var(--serif); font-size:1.05rem; padding:.6rem .75rem; border:1px solid var(--rule);
+  background:var(--ground); color:var(--ink); flex:1 1 14rem; min-width:0; }
+button { font-family:var(--mono); font-size:.74rem; letter-spacing:.08em; text-transform:uppercase;
+  padding:.6rem 1rem; border:1px solid var(--ink); background:var(--ink); color:var(--ground); cursor:pointer; }
+button.ghost { background:transparent; color:var(--ink); }
+button:disabled { opacity:.45; cursor:default; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+[hidden] { display:none !important; }
+.ghostline { font-family:var(--mono); font-size:.8rem; min-height:1.4em; margin:.65rem 0 0; color:var(--dim); }
+.ghostline b { color:var(--ink); font-weight:600; }
+.msg { font-family:var(--mono); font-size:.78rem; padding:.55rem .75rem; border-left:3px solid var(--accent);
+  background:var(--sunk); margin:.75rem 0 0; }
+.msg.bad { border-left-color:var(--warn); }
+.timer { height:.35rem; background:var(--sunk); margin:.2rem 0 .9rem; overflow:hidden; }
+.timer .bar { height:100%; width:100%; background:var(--accent); transform-origin:left center; }
+.timer.low .bar { background:var(--t5); }
+.pips { display:flex; gap:.3rem; flex-wrap:wrap; margin:.35rem 0 .2rem; }
+.pip { width:1.3rem; height:1.3rem; border:1px solid var(--rule); }
+.pip.now { border-color:var(--ink); border-width:2px; }
+.tier { font-family:var(--mono); font-size:.62rem; text-transform:uppercase; letter-spacing:.06em;
+  padding:.12rem .4rem; border:1px solid currentColor; white-space:nowrap; }
+.tier.once_in_albumillion { color:var(--t5); } .tier.rarity { color:var(--t4); }
+.tier.deep_cut { color:var(--t3); } .tier.fan_favourite { color:var(--t2); }
+.tier.chart_topper { color:var(--t1); } .tier.skip { color:var(--t0); }
+ul.plain { list-style:none; margin:0; padding:0; display:grid; gap:.5rem; }
+ul.plain li { display:flex; gap:.5rem; align-items:baseline; flex-wrap:wrap;
+  border-bottom:1px solid var(--rule); padding-bottom:.5rem; }
+ul.plain li:last-child { border-bottom:none; }
+ul.plain b { font-family:var(--sans); font-weight:600; }
+.result { border-bottom:1px solid var(--rule); padding:.75rem 0; }
+.result:last-child { border-bottom:none; }
+.result h4 { font-family:var(--sans); font-size:.98rem; margin:0 0 .35rem; }
+.result p { margin:.2rem 0; font-size:.92rem; }
+.result table { border-collapse:collapse; width:100%; font-family:var(--mono); font-size:.74rem; margin-top:.4rem; }
+.result td { padding:.2rem .4rem; border-bottom:1px solid var(--rule); }
+.result td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.result tr.you td { background:var(--sunk); font-weight:600; }
+.scroll { overflow:auto; max-height:18rem; }
+summary { cursor:pointer; font-family:var(--mono); font-size:.72rem; color:var(--dim); margin-top:.35rem; }
+.big { font-family:var(--sans); font-size:2.2rem; margin:0; letter-spacing:-.02em; }
+footer { font-family:var(--mono); font-size:.66rem; color:var(--dim); line-height:1.7;
+  border-top:1px solid var(--rule); padding-top:.8rem; }
+footer a, .how a { color:inherit; }
+.how p { margin:.35rem 0; font-size:.95rem; }
+
+/* The record: two stacked SVGs built once. The platter turns as a whole
+   element; the needle sits on the static layer above and never turns. */
+.turntable { position:relative; width:100%; max-width:17rem; aspect-ratio:1/1; margin:0 auto .75rem; }
+.turntable svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
+.platter { transform-origin:50% 50%; will-change:transform; }
+.readout { display:flex; gap:1.5rem; justify-content:center; font-family:var(--mono); }
+.readout div { display:grid; justify-items:center; gap:.15rem; }
+.readout span { font-size:.6rem; text-transform:uppercase; letter-spacing:.09em; color:var(--dim); }
+.readout strong { font-size:1.35rem; font-variant-numeric:tabular-nums; }
+.party { position:absolute; inset:0; pointer-events:none; }
+.party .halo { position:absolute; inset:5.9%; border-radius:50%;
+  box-shadow:0 0 0 2px rgba(240,194,75,.95), 0 0 34px 10px rgba(240,194,75,.5);
+  animation:halo 3.2s ease-out forwards; }
+.party .shine { position:absolute; inset:5.9%; border-radius:50%; mix-blend-mode:screen;
+  background:linear-gradient(115deg, transparent 38%, rgba(255,240,200,.8) 50%, transparent 62%);
+  background-size:300% 100%; background-position:100% 0; animation:glint 1.3s ease-in-out .1s 2 both; }
+.party .spark { position:absolute; left:50%; top:50%;
+  clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%); }
+.party .oia-badge { position:absolute; left:50%; bottom:2%; white-space:nowrap; padding:.3rem .8rem;
+  border-radius:999px; background:rgba(18,14,10,.85);
+  box-shadow:0 0 0 1px rgba(240,194,75,.7), 0 0 18px rgba(240,194,75,.45);
+  font-family:var(--sans); font-weight:700; font-size:.95rem; animation:badge 3.2s cubic-bezier(.2,.8,.3,1) forwards; }
+.party .oia-badge span { color:transparent; -webkit-background-clip:text; background-clip:text;
+  background-image:linear-gradient(90deg,#E3A93A,#FFF3CF,#F0C24B,#FFF3CF,#E3A93A);
+  background-size:200% 100%; animation:shimmer 1.1s linear infinite; }
+@keyframes halo { 0% { opacity:0; transform:scale(.94); } 15% { opacity:1; } 100% { opacity:0; transform:scale(1.1); } }
+@keyframes glint { from { background-position:100% 0; } to { background-position:0 0; } }
+@keyframes shimmer { to { background-position:-200% 0; } }
+@keyframes badge { 0% { opacity:0; transform:translateX(-50%) scale(.6); } 12% { opacity:1; transform:translateX(-50%) scale(1.08); }
+  20% { transform:translateX(-50%) scale(1); } 85% { opacity:1; transform:translateX(-50%) scale(1); }
+  100% { opacity:0; transform:translateX(-50%) scale(1); } }
+.goldrim { position:absolute; inset:5.9%; border-radius:50%; pointer-events:none; opacity:0;
+  transition:opacity .45s ease-out; box-shadow:0 0 0 2.5px #F0C24B, 0 0 16px 3px rgba(240,194,75,.5); }
+.turntable.gold .goldrim { opacity:1; transition-duration:.15s; animation:goldpulse .45s ease-in-out infinite alternate; }
+.platter .grooves { transition:stroke .45s ease-out; }
+.turntable.gold .platter .grooves { stroke:#9C7A2C; transition-duration:.15s; }
+@keyframes goldpulse { to { box-shadow:0 0 0 3px #FFE08A, 0 0 30px 9px rgba(240,194,75,.7); } }
+@media (prefers-reduced-motion: reduce) {
+  .turntable.gold .goldrim { animation:none; } .party .shine { display:none; }
+  .party .halo, .party .oia-badge, .party .oia-badge span { animation:none; }
+  .party .oia-badge { transform:translateX(-50%); } }
+</style></head><body>
+<div class="wrap">
+  <header>
+    <h1>Albumillion</h1>
+    <p class="eyebrow" id="modeLabel">Loading</p>
+    <nav>
+      <button type="button" id="dailyBtn">Today's seven</button>
+      <button type="button" id="practiceBtn" class="ghost">Practice round</button>
+      <button type="button" id="howBtn" class="ghost" aria-expanded="false" aria-controls="how">How to play</button>
+    </nav>
+  </header>
+
+  <section id="how" class="how" hidden>
+    <h3>How to play</h3>
+    <p>Seven questions, the same seven for everyone today. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
+    <p>Type freely: the matched answer shows under the box, and Enter locks it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 25 seconds, "artist - title" answers 35.</p>
+    <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
+  </section>
+
+  <div class="cols">
+    <div class="stack">
+      <div class="ask">
+        <p class="eyebrow" id="askEyebrow">Loading the questions</p>
+        <div class="pips" id="pips"></div>
+        <h2 id="askTitle">Getting the record ready</h2>
+        <div class="timer" id="timer" hidden><div class="bar" id="timerBar"></div></div>
+        <form id="answerForm" class="row" hidden>
+          <input type="text" id="typed" autocomplete="off" autocapitalize="off" spellcheck="false"
+                 placeholder="type an answer" aria-label="Your answer" aria-describedby="ghost">
+          <button type="submit">Lock</button>
+          <button type="button" id="passBtn" class="ghost">Pass</button>
+        </form>
+        <p class="ghostline" id="ghost" aria-live="polite"></p>
+        <p class="msg" id="message" aria-live="polite" hidden></p>
+      </div>
+
+      <section id="summary" hidden>
+        <p class="eyebrow" id="summaryEyebrow">Round complete</p>
+        <p class="big" id="summaryScore"></p>
+        <p class="dim" id="summaryNote"></p>
+        <div class="row" style="margin:.8rem 0">
+          <button type="button" id="shareBtn">Copy result</button>
+          <button type="button" id="againBtn" class="ghost">Practice round</button>
+        </div>
+        <p class="dim" id="shareNote" aria-live="polite"></p>
+        <div id="summaryBody"></div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section>
+        <div id="needle"></div>
+        <div class="readout">
+          <div><span>Played</span><strong id="travel">0%</strong></div>
+          <div><span>Spent</span><strong id="spent">0.00</strong></div>
+          <div><span>Of</span><strong>7.00</strong></div>
+        </div>
+      </section>
+      <section>
+        <h3>Your answers</h3>
+        <ul class="plain" id="answers"><li class="dim">None yet.</li></ul>
+      </section>
+    </div>
+  </div>
+
+  <footer>
+    Answers from <a href="https://musicbrainz.org/">MusicBrainz</a> (CC0) and Wikipedia's
+    <a href="https://en.wikipedia.org/wiki/List_of_music_genres_and_styles">List of music genres and styles</a> (CC BY-SA 4.0).
+    Rarity from <a href="https://www.last.fm/">Last.fm</a> listening, MusicBrainz release counts and Wikipedia pageviews.
+    Label art from the <a href="https://coverartarchive.org/">Cover Art Archive</a>.
+    Albumillion is not affiliated with any of these services. <span id="generated"></span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+const QUESTIONS = 7;
+const $ = (id) => document.getElementById(id);
+const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ESC[c]);
+
+/* ------------------------------------------------------------------
+   Matching: a port of albumillion/resolve.py. Answers arrive already
+   normalised by Python, so only what the player types is normalised
+   here, and export_static --parity checks the two agree.
+   ------------------------------------------------------------------ */
+
+const ACRONYM = /(?<!\p{L})\p{L}[.·・](?: ?\p{L}[.·・])+(?:\p{L}(?!\p{L}))?/gu;
+const BRACKETED = /\s*[([][^)\]]*[)\]]/g;
+const UNCLOSED = /\s*[([][^)\]]*$/;
+const EDITION_WORDS = ["remaster", "remastered", "deluxe", "deluxe edition", "expanded",
+  "expanded edition", "anniversary edition", "special edition", "reissue", "mono", "stereo",
+  "bonus track version"];
+const EDITION = new RegExp("(?<![\\p{L}\\p{N}_])(?:" + EDITION_WORDS.join("|") + ")(?![\\p{L}\\p{N}_])", "gu");
+const PUNCT = /[^\p{L}\p{N}_\s]/gu;
+const ALNUM = /[\p{L}\p{N}]/u;
+
+function normalize(text) {
+  let s = String(text).normalize("NFKD").replace(/\p{M}/gu, "");
+  s = s.toLowerCase().replace(/ß/g, "ss").trim();
+  s = s.replace(ACRONYM, (m) => m.replace(/[.·・ ]/g, ""));
+  s = s.replace(BRACKETED, " ").replace(UNCLOSED, " ").replace(EDITION, " ");
+  const symbols = s.replace(/\s+/g, " ").trim();
+  s = s.replace(/&/g, " and ").replace(PUNCT, " ").replace(/\s+/g, " ").trim();
+  s = s.replace(/^(the|a|an)\s+/, "");
+  if (!s && ![...symbols].some((ch) => ALNUM.test(ch))) return symbols;
+  return s;
+}
+
+/* Ratcliff-Obershelp, as difflib.SequenceMatcher.ratio computes it. */
+function ratio(a, b) {
+  const b2j = new Map();
+  for (let j = 0; j < b.length; j++) {
+    if (!b2j.has(b[j])) b2j.set(b[j], []);
+    b2j.get(b[j]).push(j);
+  }
+  let matches = 0;
+  const queue = [[0, a.length, 0, b.length]];
+  while (queue.length) {
+    const [alo, ahi, blo, bhi] = queue.pop();
+    let besti = alo, bestj = blo, bestsize = 0;
+    let j2len = new Map();
+    for (let i = alo; i < ahi; i++) {
+      const next = new Map();
+      for (const j of b2j.get(a[i]) || []) {
+        if (j < blo) continue;
+        if (j >= bhi) break;
+        const k = (j2len.get(j - 1) || 0) + 1;
+        next.set(j, k);
+        if (k > bestsize) { besti = i - k + 1; bestj = j - k + 1; bestsize = k; }
+      }
+      j2len = next;
+    }
+    if (bestsize) {
+      matches += bestsize;
+      if (alo < besti && blo < bestj) queue.push([alo, besti, blo, bestj]);
+      if (besti + bestsize < ahi && bestj + bestsize < bhi) queue.push([besti + bestsize, ahi, bestj + bestsize, bhi]);
+    }
+  }
+  const total = a.length + b.length;
+  return total ? 2 * matches / total : 1;
+}
+
+function quickRatio(a, counts, b) {
+  const avail = new Map();
+  let matches = 0;
+  for (const ch of b) {
+    const have = avail.has(ch) ? avail.get(ch) : (counts.get(ch) || 0);
+    avail.set(ch, have - 1);
+    if (have > 0) matches++;
+  }
+  return 2 * matches / (a.length + b.length);
+}
+
+function prepare(payload) {
+  const exact = new Map(), forms = [], surnames = new Map();
+  payload.rows.forEach(([display, , normalised], index) => {
+    for (const form of normalised) {
+      forms.push([index, form]);
+      if (!exact.has(form)) exact.set(form, index);
+    }
+    const parts = display.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const last = normalize(parts[parts.length - 1]);
+      if (!surnames.has(last)) surnames.set(last, []);
+      surnames.get(last).push(display);
+    }
+  });
+  return Object.assign(payload, { exact, forms, surnames });
+}
+
+function match(payload, typed, threshold) {
+  const target = normalize(typed);
+  if (!target) return null;
+  if (payload.exact.has(target)) return { index: payload.exact.get(target), score: 1, exact: true };
+  const counts = new Map();
+  for (const ch of target) counts.set(ch, (counts.get(ch) || 0) + 1);
+  let best = null;
+  for (const [index, form] of payload.forms) {
+    let ceiling = 2 * Math.min(target.length, form.length) / (target.length + form.length);
+    if (ceiling < threshold || (best && ceiling <= best.score)) continue;
+    ceiling = quickRatio(target, counts, form);
+    if (ceiling < threshold || (best && ceiling <= best.score)) continue;
+    const score = ratio(target, form);
+    if (score >= threshold && (!best || score > best.score)) best = { index, score, exact: false };
+  }
+  return best;
+}
+
+function ambiguousSurname(payload, typed) {
+  if (!payload.person) return [];
+  const target = normalize(typed);
+  if (!target || target.includes(" ")) return [];
+  const shared = payload.surnames.get(target) || [];
+  return shared.length > 1 ? shared : [];
+}
+
+/* ------------------------------------------------------------------
+   Data and rounds
+   ------------------------------------------------------------------ */
+
+let INDEX = null;
+const loaded = new Map();
+
+function loadQuestion(id) {
+  if (!loaded.has(id)) {
+    loaded.set(id, fetch(`data/q/${id}.json`).then((r) => {
+      if (!r.ok) throw new Error(`question ${id}: ${r.status}`);
+      return r.json();
+    }).then(prepare));
+  }
+  return loaded.get(id);
+}
+
+function hashString(text) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h;
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* Seven distinct questions, no two neighbours from the same template. */
+function pickRound(rng) {
+  const order = INDEX.questions.slice();
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const picked = [];
+  while (picked.length < QUESTIONS && order.length) {
+    const last = picked.length ? picked[picked.length - 1].template : null;
+    let at = order.findIndex((q) => q.template !== last);
+    if (at < 0) at = 0;
+    picked.push(order.splice(at, 1)[0]);
+  }
+  return picked;
+}
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const dailyKey = (day) => `albumillion:daily:${day}`;
+function storeGet(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
+function storeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } }
+
+const state = { mode: "daily", day: today(), round: [], index: 0, answers: [], payload: null,
+                timer: 0, deadline: 0, duration: 0, advancing: false };
+
+function labelFor(percent) {
+  if (percent <= 0) return INDEX.skip;
+  return INDEX.tiers.find((t) => percent >= t.floor) || INDEX.tiers[INDEX.tiers.length - 1];
+}
+
+async function startRound(mode) {
+  stopTimer();
+  state.mode = mode;
+  state.day = today();
+  const seed = mode === "daily" ? hashString(`albumillion:${state.day}`) : (Math.random() * 2 ** 32) >>> 0;
+  state.round = pickRound(mulberry32(seed));
+  state.index = 0;
+  state.answers = [];
+  state.advancing = false;
+  $("summary").hidden = true;
+  $("modeLabel").textContent = mode === "daily"
+    ? `Today's seven · ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}`
+    : "Practice round";
+  resetDisc();
+  renderSide();
+  await openQuestion();
+}
+
+function showDaily() {
+  const done = storeGet(dailyKey(today()));
+  if (done && done.answers && done.round) {
+    state.mode = "daily";
+    state.day = today();
+    state.round = done.round;
+    state.answers = done.answers;
+    state.index = done.round.length;
+    $("modeLabel").textContent = "Today's seven · played";
+    resetDisc();
+    renderSide();
+    finishRound(false);
+    return;
+  }
+  startRound("daily");
+}
+
+async function openQuestion() {
+  const entry = state.round[state.index];
+  renderPips();
+  if (!entry) { finishRound(true); return; }
+  $("askEyebrow").textContent = `Question ${state.index + 1} of ${state.round.length}`;
+  $("askTitle").textContent = entry.prompt;
+  $("answerForm").hidden = true;
+  $("ghost").textContent = "loading…";
+  showMessage("");
+  try {
+    state.payload = await loadQuestion(entry.id);
+  } catch (err) {
+    showMessage(`Could not load this question (${err.message}). Passing it.`, true);
+    record(entry, null, 0);
+    return;
+  }
+  if (state.round[state.index] !== entry) return;
+  $("ghost").textContent = "";
+  $("typed").value = "";
+  $("answerForm").hidden = false;
+  $("typed").focus();
+  startTimer(entry.timer);
+}
+
+/* ------------------------------------------------------------------
+   Timer
+   ------------------------------------------------------------------ */
+
+function startTimer(seconds) {
+  stopTimer();
+  state.duration = seconds * 1000;
+  state.deadline = performance.now() + state.duration;
+  $("timer").hidden = false;
+  const tick = () => {
+    const left = state.deadline - performance.now();
+    const share = Math.max(0, left / state.duration);
+    $("timerBar").style.transform = `scaleX(${share.toFixed(4)})`;
+    $("timer").classList.toggle("low", left < 7000);
+    if (left <= 0) { pass("Time. The needle does not move."); return; }
+    state.timer = requestAnimationFrame(tick);
+  };
+  state.timer = requestAnimationFrame(tick);
+}
+function stopTimer() {
+  if (state.timer) cancelAnimationFrame(state.timer);
+  state.timer = 0;
+}
+
+/* ------------------------------------------------------------------
+   Answering
+   ------------------------------------------------------------------ */
+
+function showMessage(text, bad) {
+  const el = $("message");
+  el.textContent = text || "";
+  el.hidden = !text;
+  el.classList.toggle("bad", !!bad);
+}
+
+$("typed").addEventListener("input", () => {
+  const p = state.payload;
+  if (!p || state.advancing) return;
+  const typed = $("typed").value;
+  if (!typed.trim()) { $("ghost").textContent = ""; return; }
+  const found = match(p, typed, INDEX.threshold);
+  if (found) {
+    $("ghost").innerHTML = `→ <b>${esc(p.rows[found.index][0])}</b>`;
+    return;
+  }
+  const shared = ambiguousSurname(p, typed);
+  $("ghost").textContent = shared.length ? `could be ${shared.join(" or ")}` : "no match yet";
+});
+
+$("answerForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const p = state.payload, entry = state.round[state.index];
+  const typed = $("typed").value.trim();
+  if (!p || !entry || !typed || state.advancing) return;
+  const found = match(p, typed, INDEX.threshold);
+  if (!found) {
+    const shared = ambiguousSurname(p, typed);
+    showMessage(shared.length ? `"${typed}" could be ${shared.join(" or ")}. Give a first name too.`
+                              : `"${typed}" was not recognised. Keep guessing.`, true);
+    if (!shared.length) { $("typed").value = ""; $("ghost").textContent = ""; }
+    return;
+  }
+  const [display, percent] = p.rows[found.index];
+  const label = labelFor(percent);
+  showMessage(`${display} · ${percent}% · ${label.name} · ${found.index + 1} of ${p.rows.length} by rarity`);
+  record(entry, found.index, percent);
+});
+
+$("passBtn").addEventListener("click", () => pass("Passed. The needle does not move."));
+
+function pass(message) {
+  const entry = state.round[state.index];
+  if (!entry || state.advancing) return;
+  showMessage(message, true);
+  record(entry, null, 0);
+}
+
+function record(entry, index, percent) {
+  stopTimer();
+  state.advancing = true;
+  const p = state.payload;
+  state.answers.push({
+    id: entry.id, prompt: entry.prompt,
+    display: index === null ? null : p.rows[index][0],
+    rank: index, of: p ? p.rows.length : entry.size, percent,
+  });
+  $("answerForm").hidden = true;
+  $("ghost").textContent = "";
+  renderSide();
+  if (state.mode === "daily" && state.index + 1 >= state.round.length) {
+    storeSet(dailyKey(state.day), { round: state.round, answers: state.answers });
+  }
+  setTimeout(() => {
+    state.index++;
+    state.advancing = false;
+    state.payload = null;
+    openQuestion();
+  }, index !== null && percent >= 100 ? 2600 : 1400);
+}
+
+/* ------------------------------------------------------------------
+   Round end
+   ------------------------------------------------------------------ */
+
+const SHARE_GLYPH = { once_in_albumillion: "🟥", rarity: "🟧", deep_cut: "🟨", fan_favourite: "🟫", chart_topper: "⬜", skip: "⬛" };
+
+async function finishRound(fresh) {
+  stopTimer();
+  renderPips();
+  $("answerForm").hidden = true;
+  $("timer").hidden = true;
+  $("ghost").textContent = "";
+  const spent = state.answers.reduce((s, a) => s + a.percent, 0) / 100;
+  const played = Math.round(spent / QUESTIONS * 100);
+  $("askEyebrow").textContent = "Round complete";
+  $("askTitle").textContent = `${played}% of the record played`;
+  if (fresh) showMessage("");
+  $("summary").hidden = false;
+  $("summaryEyebrow").textContent = state.mode === "daily" ? `Today's seven · ${state.day}` : "Practice round";
+  $("summaryScore").textContent = `${played}%`;
+  $("summaryNote").textContent = `${spent.toFixed(2)} of 7.00 spent. ` +
+    (state.mode === "daily" ? "A new seven arrives tomorrow; practice rounds draw from every question." : "");
+  $("shareNote").textContent = "";
+
+  const blocks = [];
+  for (const answer of state.answers) {
+    let p = null;
+    try { p = await loadQuestion(answer.id); } catch { /* shown without examples */ }
+    blocks.push(resultBlock(answer, p));
+  }
+  $("summaryBody").innerHTML = blocks.join("");
+}
+
+function resultBlock(answer, p) {
+  const label = labelFor(answer.percent);
+  const yours = answer.display === null
+    ? `<span class="tier skip">No answer</span>`
+    : `<span class="tier ${label.key}">${answer.percent}% ${esc(label.name)}</span> <b>${esc(answer.display)}</b>`;
+  if (!p) return `<div class="result"><h4>${esc(answer.prompt)}</h4><p>${yours}</p></div>`;
+  const rows = p.rows;
+  // One example from each label, from the middle of its band, as the spec's
+  // after-round spread; the whole set for a question small enough to read.
+  const examples = [];
+  for (const tier of INDEX.tiers) {
+    const band = rows.map((r, i) => [r, i]).filter(([r]) => labelFor(r[1]).key === tier.key);
+    if (band.length) {
+      const [r, i] = band[Math.floor(band.length / 2)];
+      examples.push(`<tr${i === answer.rank ? ' class="you"' : ""}><td>${esc(r[0])}</td>` +
+        `<td class="num">${r[1]}%</td><td><span class="tier ${tier.key}">${esc(tier.name)}</span></td></tr>`);
+    }
+  }
+  const full = rows.length <= 40 ? `<details><summary>All ${rows.length} answers, rarest first</summary><div class="scroll"><table>` +
+    rows.map((r, i) => `<tr${i === answer.rank ? ' class="you"' : ""}><td>${esc(r[0])}</td><td class="num">${r[1]}%</td></tr>`).join("") +
+    `</table></div></details>` : "";
+  return `<div class="result"><h4>${esc(answer.prompt)}</h4><p>${yours}</p>` +
+    `<p class="dim">${rows.length.toLocaleString()} valid answers. The rarest: ${esc(rows[0][0])}.</p>` +
+    `<table>${examples.join("")}</table>${full}</div>`;
+}
+
+$("shareBtn").addEventListener("click", async () => {
+  const spent = state.answers.reduce((s, a) => s + a.percent, 0) / 100;
+  const glyphs = state.answers.map((a) => SHARE_GLYPH[labelFor(a.percent).key]).join("");
+  const text = `Albumillion ${state.mode === "daily" ? state.day : "practice"} · ${Math.round(spent / QUESTIONS * 100)}%\n${glyphs}\n${location.href.split("#")[0]}`;
+  try { await navigator.clipboard.writeText(text); $("shareNote").textContent = "Copied."; }
+  catch { $("shareNote").textContent = text; }
+});
+
+/* ------------------------------------------------------------------
+   The record, from the developer console
+   ------------------------------------------------------------------ */
+
+const R_OUT = 150, R_LAB = 40, CX = 170, CY = 170;
+const TIER_VAR = { once_in_albumillion: "t5", rarity: "t4", deep_cut: "t3", fan_favourite: "t2", chart_topper: "t1", skip: "t0" };
+const COVERS = [
+  ["OK Computer", "Radiohead", "b1392450-e666-3926-a536-22c65f834433"],
+  ["Abbey Road", "The Beatles", "9162580e-5df4-32de-80cc-f45a8d8a9b1d"],
+  ["Rumours", "Fleetwood Mac", "416bb5e5-c7d1-3977-8fd7-7c9daf6c2be6"],
+  ["The Dark Side of the Moon", "Pink Floyd", "f5093c06-23e3-404f-aeaa-40f72885ee3a"],
+  ["Kind of Blue", "Miles Davis", "8e8a594f-2175-38c7-a871-abb68ec363e7"],
+  ["Pet Sounds", "The Beach Boys", "fdd96703-7b21-365e-bdea-38029fbeb84e"],
+  ["Nevermind", "Nirvana", "1b022e01-4da6-387b-8658-8678046e4cef"],
+  ["Thriller", "Michael Jackson", "f32fab67-77dd-3937-addc-9062e28e4c37"],
+  ["To Pimp a Butterfly", "Kendrick Lamar", "d9103c72-3807-4378-9ce7-b6f3e8fdd547"],
+  ["Blue", "Joni Mitchell", "42d725fb-a8b7-388c-8866-3b02789af326"],
+  ["London Calling", "The Clash", "8d73e45e-7ca1-3cb4-ae28-6da76196c17c"],
+];
+const MIN_TURNS = 0.6, TURNS_PER_SPEND = 2.4, MS_PER_TURN = 550, SPIN_LEAD_MS = 250;
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let disc = null, shown = null, motion = null;
+
+function buildDisc() {
+  const circle = (r, attrs) => `<circle cx="${CX}" cy="${CY}" r="${r}" ${attrs}></circle>`;
+  let grooves = "", ticks = "";
+  for (let r = 144; r > R_LAB + 4; r -= 12) grooves += circle(r, "");
+  for (let k = 1; k < QUESTIONS; k++) ticks += circle((R_OUT - (R_OUT - R_LAB) * k / QUESTIONS).toFixed(2), "");
+  const label = 'text-anchor="middle" fill="var(--ground)" opacity=".85" style="font-family:var(--mono);font-size:7px;letter-spacing:1.4px"';
+  $("needle").innerHTML = `<div class="turntable" id="turntable" role="img">
+    <svg viewBox="0 0 340 340" class="platter" id="platter" aria-hidden="true" focusable="false">
+      <defs><clipPath id="labelClip">${circle(R_LAB, "")}</clipPath></defs>
+      ${circle(R_OUT, 'fill="var(--disc)"')}
+      <g class="grooves" fill="none" stroke="var(--groove)" stroke-width="1">${grooves}</g>
+      <g id="discRings"></g>
+      ${circle(R_LAB, 'fill="var(--accent)"')}
+      <g id="labelPrint"><text x="${CX}" y="148" ${label}>A-SIDE</text><text x="${CX}" y="199" ${label}>33&#8531;</text></g>
+      <g id="labelArt" visibility="hidden">
+        <image id="labelImage" x="${CX - R_LAB}" y="${CY - R_LAB}" width="${2 * R_LAB}" height="${2 * R_LAB}"
+               preserveAspectRatio="xMidYMid slice" clip-path="url(#labelClip)"></image>
+        ${circle(R_LAB, 'fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1"')}
+      </g>
+      ${circle(3, 'fill="var(--surface)"')}
+    </svg>
+    <div class="goldrim" aria-hidden="true"></div>
+    <svg viewBox="0 0 340 340" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="var(--tick)" stroke-width="0.75" stroke-dasharray="2 4">${ticks}</g>
+      <line id="needleArm" x1="318" y1="36" x2="${CX + R_OUT}" y2="${CY}" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"></line>
+      <circle id="needleTip" cx="${CX + R_OUT}" cy="${CY}" r="5" fill="var(--surface)" stroke="var(--ink)" stroke-width="2.5"></circle>
+    </svg>
+  </div>`;
+  disc = { wrap: $("turntable"), platter: $("platter"), rings: $("discRings"), arm: $("needleArm"),
+           tip: $("needleTip"), art: $("labelArt"), artImage: $("labelImage"), print: $("labelPrint"),
+           cover: null, ringsHtml: null };
+  pickCover();
+  return disc;
+}
+
+function pickCover() {
+  const d = disc || buildDisc();
+  const order = COVERS.map((c) => [Math.random(), c]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  const tryCover = (i) => {
+    if (i >= order.length) return;
+    const [title, artist, gid] = order[i];
+    const url = `https://coverartarchive.org/release-group/${gid}/front-250`;
+    const probe = new Image();
+    probe.onload = () => {
+      d.artImage.setAttribute("href", url);
+      d.art.removeAttribute("visibility");
+      d.print.setAttribute("visibility", "hidden");
+      d.cover = `${title} by ${artist}`;
+    };
+    probe.onerror = () => tryCover(i + 1);
+    probe.src = url;
+  };
+  tryCover(0);
+}
+
+function paintDisc(d, answers, spentNow, angle) {
+  const budget = (R_OUT - R_LAB) / QUESTIONS;
+  let edge = R_OUT, left = spentNow, rings = "";
+  for (const a of answers) {
+    const spend = a.percent / 100;
+    const width = Math.max(0, Math.min(spend, left)) * budget;
+    left -= spend;
+    if (width < 0.05) continue;
+    const outer = edge, inner = edge - width;
+    edge = inner;
+    rings += `<circle cx="${CX}" cy="${CY}" r="${((outer + inner) / 2).toFixed(2)}" fill="none" ` +
+      `stroke="var(--${TIER_VAR[labelFor(a.percent).key] || "t1"})" stroke-width="${width.toFixed(2)}" opacity="0.85"></circle>`;
+  }
+  if (rings !== d.ringsHtml) { d.rings.innerHTML = rings; d.ringsHtml = rings; }
+  const radius = R_OUT - (spentNow / QUESTIONS) * (R_OUT - R_LAB);
+  const bearing = -35 * Math.PI / 180;
+  const x = (CX + radius * Math.cos(bearing)).toFixed(2), y = (CY + radius * Math.sin(bearing)).toFixed(2);
+  d.arm.setAttribute("x2", x); d.arm.setAttribute("y2", y);
+  d.tip.setAttribute("cx", x); d.tip.setAttribute("cy", y);
+  d.platter.style.transform = `rotate(${angle.toFixed(2)}deg)`;
+}
+
+function resetDisc() {
+  const d = disc || buildDisc();
+  if (motion) { cancelAnimationFrame(motion.frame); motion = null; }
+  d.wrap.classList.remove("gold");
+  shown = null;
+  paintDisc(d, [], 0, 0);
+}
+
+function drawDisc(answers) {
+  const d = disc || buildDisc();
+  const spent = answers.reduce((s, a) => s + a.percent / 100, 0);
+  d.wrap.setAttribute("aria-label", `Needle at ${Math.round(spent / QUESTIONS * 100)} percent of the record`);
+  if (motion) { cancelAnimationFrame(motion.frame); motion = null; d.wrap.classList.remove("gold"); }
+  const angle = shown ? shown.angle : 0;
+  const last = answers[answers.length - 1];
+  const oneMore = Boolean(shown) && answers.length === shown.count + 1;
+  const turns = oneMore && last.percent > 0 ? MIN_TURNS + TURNS_PER_SPEND * last.percent / 100 : 0;
+  if (!turns || reduceMotion.matches) {
+    paintDisc(d, answers, spent, angle);
+    shown = { count: answers.length, spent, angle };
+    if (oneMore && last.percent >= 100) celebrate();
+    return;
+  }
+  const from = shown.spent, endAngle = angle + turns * 360, duration = SPIN_LEAD_MS + MS_PER_TURN * turns;
+  const gold = last.percent >= 100, start = performance.now();
+  motion = { frame: 0 };
+  d.wrap.classList.toggle("gold", gold);
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    paintDisc(d, answers, from + (spent - from) * e, angle + (endAngle - angle) * e);
+    if (t < 1) { motion.frame = requestAnimationFrame(step); return; }
+    motion = null;
+    shown = { count: answers.length, spent, angle: endAngle % 360 };
+    d.wrap.classList.remove("gold");
+    if (gold) celebrate();
+  };
+  motion.frame = requestAnimationFrame(step);
+}
+
+function celebrate() {
+  const wrap = (disc || buildDisc()).wrap;
+  wrap.querySelectorAll(".party").forEach((el) => el.remove());
+  const party = document.createElement("div");
+  party.className = "party";
+  party.setAttribute("aria-hidden", "true");
+  party.innerHTML = '<div class="halo"></div><div class="shine"></div><div class="oia-badge"><span>Once In Albumillion</span></div>';
+  wrap.appendChild(party);
+  if (!reduceMotion.matches) {
+    const half = wrap.clientWidth / 2;
+    for (let i = 0; i < 44; i++) {
+      const spark = document.createElement("span");
+      spark.className = "spark";
+      const size = (4 + Math.random() * 8).toFixed(1);
+      spark.style.width = spark.style.height = `${size}px`;
+      spark.style.background = Math.random() < 0.65 ? "#F0C24B" : "#FFF7E0";
+      party.appendChild(spark);
+      const bearing = Math.random() * Math.PI * 2;
+      const near = half * (0.2 + Math.random() * 0.25), far = half * (0.75 + Math.random() * 0.45);
+      const at = (r, scale, turn) => `translate(-50%, -50%) translate(${(Math.cos(bearing) * r).toFixed(1)}px, ${(Math.sin(bearing) * r).toFixed(1)}px) scale(${scale}) rotate(${turn}deg)`;
+      spark.animate([{ transform: at(near, 0.2, 0), opacity: 0 }, { transform: at((near + far) / 2, 1, 90), opacity: 1, offset: 0.35 },
+                     { transform: at(far, 0.4, 180), opacity: 0 }],
+                    { duration: 1200 + Math.random() * 1000, delay: Math.random() * 900, easing: "cubic-bezier(.15,.7,.3,1)", fill: "both" });
+    }
+  }
+  setTimeout(() => party.remove(), 3400);
+}
+
+/* ------------------------------------------------------------------
+   Side panel
+   ------------------------------------------------------------------ */
+
+function renderPips() {
+  $("pips").innerHTML = state.round.map((_, i) => {
+    const a = state.answers[i];
+    const colour = a ? `var(--${TIER_VAR[labelFor(a.percent).key]})` : "transparent";
+    return `<span class="pip${i === state.index ? " now" : ""}" style="background:${colour}" title="Question ${i + 1}"></span>`;
+  }).join("");
+}
+
+function renderSide() {
+  renderPips();
+  drawDisc(state.answers);
+  const spent = state.answers.reduce((s, a) => s + a.percent, 0) / 100;
+  $("travel").textContent = `${Math.round(spent / QUESTIONS * 100)}%`;
+  $("spent").textContent = spent.toFixed(2);
+  $("answers").innerHTML = state.answers.length ? state.answers.map((a) => {
+    const label = labelFor(a.percent);
+    return `<li><span class="tier ${label.key}">${a.display === null ? "Pass" : `${a.percent}% ${esc(label.name)}`}</span>` +
+      `<b>${esc(a.display === null ? "No answer" : a.display)}</b><span class="dim">${esc(a.prompt)}</span></li>`;
+  }).join("") : `<li class="dim">None yet.</li>`;
+}
+
+/* ------------------------------------------------------------------
+   Start
+   ------------------------------------------------------------------ */
+
+$("dailyBtn").addEventListener("click", showDaily);
+$("practiceBtn").addEventListener("click", () => startRound("practice"));
+$("againBtn").addEventListener("click", () => startRound("practice"));
+$("howBtn").addEventListener("click", () => {
+  const how = $("how");
+  how.hidden = !how.hidden;
+  $("howBtn").setAttribute("aria-expanded", String(!how.hidden));
+});
+
+// For the parity check in export_static: the matcher on a given question.
+window.albumillion = {
+  normalize,
+  async match(id, typed) {
+    const p = await loadQuestion(id);
+    const found = match(p, typed, INDEX.threshold);
+    return { rank: found ? found.index : null, exact: !!(found && found.exact),
+             ambiguous: found ? [] : ambiguousSurname(p, typed) };
+  },
+};
+
+fetch("data/questions.json").then((r) => r.json()).then((index) => {
+  INDEX = index;
+  $("generated").textContent = `Questions built ${index.generated}.`;
+  buildDisc();
+  showDaily();
+}).catch((err) => {
+  $("askTitle").textContent = "The questions could not be loaded";
+  showMessage(String(err.message || err), true);
+});
+</script>
+</body></html>
