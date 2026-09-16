@@ -140,7 +140,8 @@ footer a, .how a { color:inherit; }
   <section id="how" class="how" hidden>
     <h3>How to play</h3>
     <p>Seven questions, the same seven for everyone today. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
-    <p>Type freely: the matched answer shows under the box, and Enter locks it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 25 seconds, "artist - title" answers 35.</p>
+    <p>Practice rounds are seven at a time from the whole set, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
+    <p>Type freely: the matched answer shows under the box, and Enter locks it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
     <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
   </section>
 
@@ -356,12 +357,7 @@ function mulberry32(seed) {
 }
 
 /* Seven distinct questions, no two neighbours from the same template. */
-function pickRound(rng) {
-  const order = INDEX.questions.slice();
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
+function deal(order) {
   const picked = [];
   while (picked.length < QUESTIONS && order.length) {
     const last = picked.length ? picked[picked.length - 1].template : null;
@@ -370,6 +366,81 @@ function pickRound(rng) {
     picked.push(order.splice(at, 1)[0]);
   }
   return picked;
+}
+
+function shuffled(list, rng) {
+  const order = list.slice();
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
+/* Today's seven: one shuffle of everything, seeded by the date. */
+function pickRound(rng) {
+  return deal(shuffled(INDEX.questions, rng));
+}
+
+/* Practice deals from a deck kept in the browser, so a question does not
+   come back until every other one has been played. The deck holds the ids
+   still to come; when it runs out it is cut again from the whole set, minus
+   the seven just played, so the join between two cycles is not a repeat
+   either. Ids the last export dropped fall out on load. */
+const DECK_KEY = "albumillion:deck";
+const deckState = { rest: [], seen: 0, cycle: 1, total: 0 };
+
+function loadDeck() {
+  const known = new Map(INDEX.questions.map((q) => [q.id, q]));
+  const held = storeGet(DECK_KEY) || {};
+  const rest = (Array.isArray(held.rest) ? held.rest : []).filter((id) => known.has(id));
+  deckState.rest = rest;
+  deckState.cycle = held.cycle > 0 ? held.cycle : 1;
+  deckState.total = known.size;
+  deckState.seen = Math.min(Math.max(deckState.total - rest.length, 0), deckState.total);
+  if (!held.rest) cutDeck([]);
+}
+
+function cutDeck(exclude) {
+  const skip = new Set(exclude);
+  const pool = INDEX.questions.filter((q) => !skip.has(q.id));
+  deckState.rest = shuffled(pool, Math.random).map((q) => q.id);
+  deckState.seen = 0;
+  saveDeck();
+}
+
+function saveDeck() {
+  storeSet(DECK_KEY, { rest: deckState.rest, cycle: deckState.cycle });
+}
+
+function practiceRound() {
+  const known = new Map(INDEX.questions.map((q) => [q.id, q]));
+  const order = deckState.rest.map((id) => known.get(id)).filter(Boolean);
+  const picked = deal(order);
+  // A short deck is topped up from the next cycle rather than dealing a
+  // round of four.
+  if (picked.length < QUESTIONS) {
+    deckState.cycle += 1;
+    cutDeck(picked.map((q) => q.id));
+    const next = deckState.rest.map((id) => known.get(id)).filter(Boolean);
+    while (picked.length < QUESTIONS && next.length) {
+      const last = picked.length ? picked[picked.length - 1].template : null;
+      let at = next.findIndex((q) => q.template !== last);
+      if (at < 0) at = 0;
+      picked.push(next.splice(at, 1)[0]);
+    }
+  }
+  const dealt = new Set(picked.map((q) => q.id));
+  deckState.rest = deckState.rest.filter((id) => !dealt.has(id));
+  deckState.seen = Math.min(deckState.total - deckState.rest.length, deckState.total);
+  saveDeck();
+  return picked;
+}
+
+function practiceLabel() {
+  const seen = Math.min(deckState.seen, deckState.total);
+  const pass = deckState.cycle > 1 ? ` · pass ${deckState.cycle}` : "";
+  return `Practice round · ${seen} of ${deckState.total} played${pass}`;
 }
 
 function today() {
@@ -392,15 +463,16 @@ async function startRound(mode) {
   stopTimer();
   state.mode = mode;
   state.day = today();
-  const seed = mode === "daily" ? hashString(`albumillion:${state.day}`) : (Math.random() * 2 ** 32) >>> 0;
-  state.round = pickRound(mulberry32(seed));
+  state.round = mode === "daily"
+    ? pickRound(mulberry32(hashString(`albumillion:${state.day}`)))
+    : practiceRound();
   state.index = 0;
   state.answers = [];
   state.advancing = false;
   $("summary").hidden = true;
   $("modeLabel").textContent = mode === "daily"
     ? `Today's seven · ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}`
-    : "Practice round";
+    : practiceLabel();
   resetDisc();
   renderSide();
   await openQuestion();
@@ -565,10 +637,15 @@ async function finishRound(fresh) {
   $("askTitle").textContent = `${played}% of the record played`;
   if (fresh) showMessage("");
   $("summary").hidden = false;
-  $("summaryEyebrow").textContent = state.mode === "daily" ? `Today's seven · ${state.day}` : "Practice round";
+  $("summaryEyebrow").textContent = state.mode === "daily" ? `Today's seven · ${state.day}` : practiceLabel();
   $("summaryScore").textContent = `${played}%`;
+  const left = Math.max(deckState.total - deckState.seen, 0);
   $("summaryNote").textContent = `${spent.toFixed(2)} of 7.00 spent. ` +
-    (state.mode === "daily" ? "A new seven arrives tomorrow; practice rounds draw from every question." : "");
+    (state.mode === "daily"
+      ? "A new seven arrives tomorrow; practice keeps dealing new questions."
+      : left >= QUESTIONS
+        ? `${left} questions still to come before any of these return.`
+        : "The deck is down to its last few; the next round cuts a fresh one.");
   $("shareNote").textContent = "";
 
   const blocks = [];
@@ -833,6 +910,7 @@ window.albumillion = {
 
 fetch("data/questions.json").then((r) => r.json()).then((index) => {
   INDEX = index;
+  loadDeck();
   $("generated").textContent = `Questions built ${index.generated}.`;
   buildDisc();
   showDaily();
