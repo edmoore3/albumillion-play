@@ -140,7 +140,7 @@ footer a, .how a { color:inherit; }
   <section id="how" class="how" hidden>
     <h3>How to play</h3>
     <p>Seven questions, the same seven for everyone today. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
-    <p>Practice rounds are seven at a time from the whole set, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
+    <p>Practice rounds are seven at a time from the whole set, less today's seven, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
     <p>Type freely: the matched answer shows under the box, and Enter locks it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
     <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
   </section>
@@ -377,21 +377,37 @@ function shuffled(list, rng) {
   return order;
 }
 
-/* Today's seven: one shuffle of everything, seeded by the date. */
-function pickRound(rng) {
-  return deal(shuffled(INDEX.questions, rng));
+/* Today's seven, as export_static scheduled them. Those are fixed when the
+   site is built, so a republish does not deal the day again. Past the end of
+   the schedule, one shuffle of everything seeded by the date. */
+function dailyIds(day) {
+  return (INDEX.daily && INDEX.daily[day]) || [];
+}
+
+function pickRound(day) {
+  const known = new Map(INDEX.questions.map((q) => [q.id, q]));
+  const round = dailyIds(day).map((id) => known.get(id)).filter(Boolean);
+  if (round.length) return round;
+  return deal(shuffled(INDEX.questions, mulberry32(hashString(`albumillion:${day}`))));
 }
 
 /* Practice deals from a deck kept in the browser, so a question does not
    come back until every other one has been played. The deck holds the ids
    still to come; when it runs out it is cut again from the whole set, minus
    the seven just played, so the join between two cycles is not a repeat
-   either. Ids the last export dropped fall out on load. */
-const DECK_KEY = "albumillion:deck";
+   either. Ids the last export dropped fall out on load. Today's daily seven
+   are never dealt, so practice cannot spoil them. The key moved to v2 when
+   ids stopped being pool rows (16 Sep 2026). */
+const DECK_KEY = "albumillion:deck:v2";
 const deckState = { rest: [], seen: 0, cycle: 1, total: 0 };
 
+function practiceQuestions() {
+  const daily = new Set(dailyIds(today()));
+  return INDEX.questions.filter((q) => !daily.has(q.id));
+}
+
 function loadDeck() {
-  const known = new Map(INDEX.questions.map((q) => [q.id, q]));
+  const known = new Map(practiceQuestions().map((q) => [q.id, q]));
   const held = storeGet(DECK_KEY) || {};
   const rest = (Array.isArray(held.rest) ? held.rest : []).filter((id) => known.has(id));
   deckState.rest = rest;
@@ -403,7 +419,7 @@ function loadDeck() {
 
 function cutDeck(exclude) {
   const skip = new Set(exclude);
-  const pool = INDEX.questions.filter((q) => !skip.has(q.id));
+  const pool = practiceQuestions().filter((q) => !skip.has(q.id));
   deckState.rest = shuffled(pool, Math.random).map((q) => q.id);
   deckState.seen = 0;
   saveDeck();
@@ -414,7 +430,7 @@ function saveDeck() {
 }
 
 function practiceRound() {
-  const known = new Map(INDEX.questions.map((q) => [q.id, q]));
+  const known = new Map(practiceQuestions().map((q) => [q.id, q]));
   const order = deckState.rest.map((id) => known.get(id)).filter(Boolean);
   const picked = deal(order);
   // A short deck is topped up from the next cycle rather than dealing a
@@ -463,9 +479,7 @@ async function startRound(mode) {
   stopTimer();
   state.mode = mode;
   state.day = today();
-  state.round = mode === "daily"
-    ? pickRound(mulberry32(hashString(`albumillion:${state.day}`)))
-    : practiceRound();
+  state.round = mode === "daily" ? pickRound(state.day) : practiceRound();
   state.index = 0;
   state.answers = [];
   state.advancing = false;
@@ -478,7 +492,12 @@ async function startRound(mode) {
   await openQuestion();
 }
 
-function showDaily() {
+async function showDaily() {
+  // A tab left open overnight still holds yesterday's index, which may not
+  // schedule today or may name questions a later build renamed.
+  if (indexDay !== today()) {
+    try { await loadIndex(); } catch { /* keep the index already held */ }
+  }
   const done = storeGet(dailyKey(today()));
   if (done && done.answers && done.round) {
     state.mode = "daily";
@@ -908,12 +927,23 @@ window.albumillion = {
   },
 };
 
-fetch("data/questions.json").then((r) => r.json()).then((index) => {
-  INDEX = index;
+/* The index is revalidated rather than taken from the browser's cache:
+   GitHub Pages lets a copy live ten minutes, and a page on an old index
+   asked for questions the next build had dropped. */
+let indexDay = null;
+
+async function loadIndex() {
+  const r = await fetch("data/questions.json", { cache: "no-cache" });
+  if (!r.ok) throw new Error(`questions: ${r.status}`);
+  INDEX = await r.json();
+  indexDay = today();
   loadDeck();
-  $("generated").textContent = `Questions built ${index.generated}.`;
+  $("generated").textContent = `Questions built ${INDEX.generated}.`;
+}
+
+loadIndex().then(() => {
   buildDisc();
-  showDaily();
+  return showDaily();
 }).catch((err) => {
   $("askTitle").textContent = "The questions could not be loaded";
   showMessage(String(err.message || err), true);
