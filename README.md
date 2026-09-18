@@ -5,7 +5,7 @@ answer nobody else thinks of is worth the most. Play it at
 https://edmoore3.github.io/albumillion-play/.
 
 This repository holds only the built site: one page and its questions,
-5679 of them, built 2026-09-17. It is generated from the private
+5681 of them, built 2026-09-18. It is generated from the private
 Albumillion repository by `python -m albumillion.export_static`; changes
 made here are overwritten by the next build.
 
