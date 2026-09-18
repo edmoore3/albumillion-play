@@ -141,7 +141,7 @@ footer a, .how a { color:inherit; }
     <h3>How to play</h3>
     <p>Seven questions, the same seven for everyone today. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
     <p>Practice rounds are seven at a time from the whole set, less today's seven, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
-    <p>Type freely: the matched answer shows under the box, and Enter locks it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
+    <p>Type an answer and press Enter. Spelling does not have to be perfect: Enter corrects your guess to the answer it matches and locks it. Where a guess could be two answers ("Garfunkel"), the box offers the better known one; Enter again locks it, or change it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
     <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
   </section>
 
@@ -282,26 +282,26 @@ function quickRatio(a, counts, b) {
 }
 
 function prepare(payload) {
-  const exact = new Map(), forms = [], surnames = new Map();
-  payload.rows.forEach(([display, , normalised], index) => {
+  const exact = new Map(), forms = [];
+  payload.rows.forEach(([, , normalised], index) => {
     for (const form of normalised) {
       forms.push([index, form]);
       if (!exact.has(form)) exact.set(form, index);
     }
-    const parts = display.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      const last = normalize(parts[parts.length - 1]);
-      if (!surnames.has(last)) surnames.set(last, []);
-      surnames.get(last).push(display);
-    }
   });
-  return Object.assign(payload, { exact, forms, surnames });
+  // Forms two or more answers claim, to their rows most common first. A
+  // file from before 17 Sep 2026 has none.
+  const shared = new Map(payload.shared || []);
+  return Object.assign(payload, { exact, forms, shared });
 }
 
 function match(payload, typed, threshold) {
   const target = normalize(typed);
   if (!target) return null;
   if (payload.exact.has(target)) return { index: payload.exact.get(target), score: 1, exact: true };
+  // A form answers share is theirs to choose between (see choices), never a
+  // fuzzy hit on a third.
+  if (payload.shared.has(target)) return null;
   const counts = new Map();
   for (const ch of target) counts.set(ch, (counts.get(ch) || 0) + 1);
   let best = null;
@@ -316,12 +316,12 @@ function match(payload, typed, threshold) {
   return best;
 }
 
-function ambiguousSurname(payload, typed) {
-  if (!payload.person) return [];
+/* The rows a guess could mean when two or more answers share it, most
+   common first: "Garfunkel" is Simon & Garfunkel or Art Garfunkel. */
+function choices(payload, typed) {
   const target = normalize(typed);
-  if (!target || target.includes(" ")) return [];
-  const shared = payload.surnames.get(target) || [];
-  return shared.length > 1 ? shared : [];
+  if (!target || payload.exact.has(target)) return [];
+  return payload.shared.get(target) || [];
 }
 
 /* ------------------------------------------------------------------
@@ -468,7 +468,8 @@ function storeGet(key) { try { return JSON.parse(localStorage.getItem(key)); } c
 function storeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } }
 
 const state = { mode: "daily", day: today(), round: [], index: 0, answers: [], payload: null,
-                timer: 0, deadline: 0, duration: 0, advancing: false };
+                timer: 0, deadline: 0, duration: 0, advancing: false,
+                pending: null };   // an answer offered for a second Enter to confirm
 
 function labelFor(percent) {
   if (percent <= 0) return INDEX.skip;
@@ -531,6 +532,7 @@ async function openQuestion() {
     return;
   }
   if (state.round[state.index] !== entry) return;
+  state.pending = null;
   $("ghost").textContent = "";
   $("typed").value = "";
   $("answerForm").hidden = false;
@@ -573,18 +575,14 @@ function showMessage(text, bad) {
   el.classList.toggle("bad", !!bad);
 }
 
+/* Nothing is shown while the player types (owner, 17 Sep 2026). Enter
+   corrects the guess to the answer it matches and locks it. A guess two
+   answers share puts the one more common for this question in the box and
+   asks for a second Enter; editing the box makes it a new guess. */
 $("typed").addEventListener("input", () => {
-  const p = state.payload;
-  if (!p || state.advancing) return;
-  const typed = $("typed").value;
-  if (!typed.trim()) { $("ghost").textContent = ""; return; }
-  const found = match(p, typed, INDEX.threshold);
-  if (found) {
-    $("ghost").innerHTML = `→ <b>${esc(p.rows[found.index][0])}</b>`;
-    return;
-  }
-  const shared = ambiguousSurname(p, typed);
-  $("ghost").textContent = shared.length ? `could be ${shared.join(" or ")}` : "no match yet";
+  if (!state.pending) return;
+  state.pending = null;
+  $("ghost").textContent = "";
 });
 
 $("answerForm").addEventListener("submit", (event) => {
@@ -592,19 +590,40 @@ $("answerForm").addEventListener("submit", (event) => {
   const p = state.payload, entry = state.round[state.index];
   const typed = $("typed").value.trim();
   if (!p || !entry || !typed || state.advancing) return;
+  const pending = state.pending;
+  state.pending = null;
+  if (pending && typed === pending.shown) { lock(entry, pending.index, pending.typed); return; }
+
   const found = match(p, typed, INDEX.threshold);
-  if (!found) {
-    const shared = ambiguousSurname(p, typed);
-    showMessage(shared.length ? `"${typed}" could be ${shared.join(" or ")}. Give a first name too.`
-                              : `"${typed}" was not recognised. Keep guessing.`, true);
-    if (!shared.length) { $("typed").value = ""; $("ghost").textContent = ""; }
+  if (found) { lock(entry, found.index, typed); return; }
+
+  const options = choices(p, typed);
+  if (options.length) {
+    const [best, ...others] = options;
+    const shown = p.rows[best][0];
+    state.pending = { index: best, shown, typed };
+    $("typed").value = shown;
+    const also = others.slice(0, 3).map((i) => `<b>${esc(p.rows[i][0])}</b>`).join(" or ");
+    $("ghost").innerHTML = `${esc(typed)} → <b>${esc(shown)}</b>. Confirm? ` +
+      `Enter locks it${also ? `, or type ${also}${others.length > 3 ? " or another" : ""}` : ""}.`;
+    showMessage("");
     return;
   }
-  const [display, percent] = p.rows[found.index];
-  const label = labelFor(percent);
-  showMessage(`${display} · ${percent}% · ${label.name} · ${found.index + 1} of ${p.rows.length} by rarity`);
-  record(entry, found.index, percent);
+  showMessage(`"${typed}" was not recognised. Keep guessing.`, true);
+  $("typed").value = "";
+  $("ghost").textContent = "";
 });
+
+/* Lock a row, showing what the guess was corrected to. */
+function lock(entry, index, typed) {
+  const [display, percent] = state.payload.rows[index];
+  const label = labelFor(percent);
+  $("typed").value = display;
+  const corrected = normalize(typed) === normalize(display) ? "" : `${typed} → `;
+  showMessage(`${corrected}${display} · ${percent}% · ${label.name} · ` +
+              `${index + 1} of ${state.payload.rows.length} by rarity`);
+  record(entry, index, percent);
+}
 
 $("passBtn").addEventListener("click", () => pass("Passed. The needle does not move."));
 
@@ -618,6 +637,7 @@ function pass(message) {
 function record(entry, index, percent) {
   stopTimer();
   state.advancing = true;
+  state.pending = null;
   const p = state.payload;
   state.answers.push({
     id: entry.id, prompt: entry.prompt,
@@ -923,7 +943,7 @@ window.albumillion = {
     const p = await loadQuestion(id);
     const found = match(p, typed, INDEX.threshold);
     return { rank: found ? found.index : null, exact: !!(found && found.exact),
-             ambiguous: found ? [] : ambiguousSurname(p, typed) };
+             choices: found ? [] : choices(p, typed) };
   },
 };
 
