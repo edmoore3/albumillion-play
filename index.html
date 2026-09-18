@@ -399,7 +399,7 @@ function pickRound(day) {
    are never dealt, so practice cannot spoil them. The key moved to v2 when
    ids stopped being pool rows (16 Sep 2026). */
 const DECK_KEY = "albumillion:deck:v2";
-const deckState = { rest: [], seen: 0, cycle: 1, total: 0 };
+const deckState = { rest: [] };
 
 function practiceQuestions() {
   const daily = new Set(dailyIds(today()));
@@ -411,9 +411,6 @@ function loadDeck() {
   const held = storeGet(DECK_KEY) || {};
   const rest = (Array.isArray(held.rest) ? held.rest : []).filter((id) => known.has(id));
   deckState.rest = rest;
-  deckState.cycle = held.cycle > 0 ? held.cycle : 1;
-  deckState.total = known.size;
-  deckState.seen = Math.min(Math.max(deckState.total - rest.length, 0), deckState.total);
   if (!held.rest) cutDeck([]);
 }
 
@@ -421,12 +418,11 @@ function cutDeck(exclude) {
   const skip = new Set(exclude);
   const pool = practiceQuestions().filter((q) => !skip.has(q.id));
   deckState.rest = shuffled(pool, Math.random).map((q) => q.id);
-  deckState.seen = 0;
   saveDeck();
 }
 
 function saveDeck() {
-  storeSet(DECK_KEY, { rest: deckState.rest, cycle: deckState.cycle });
+  storeSet(DECK_KEY, { rest: deckState.rest });
 }
 
 function practiceRound() {
@@ -436,7 +432,6 @@ function practiceRound() {
   // A short deck is topped up from the next cycle rather than dealing a
   // round of four.
   if (picked.length < QUESTIONS) {
-    deckState.cycle += 1;
     cutDeck(picked.map((q) => q.id));
     const next = deckState.rest.map((id) => known.get(id)).filter(Boolean);
     while (picked.length < QUESTIONS && next.length) {
@@ -448,15 +443,14 @@ function practiceRound() {
   }
   const dealt = new Set(picked.map((q) => q.id));
   deckState.rest = deckState.rest.filter((id) => !dealt.has(id));
-  deckState.seen = Math.min(deckState.total - deckState.rest.length, deckState.total);
   saveDeck();
   return picked;
 }
 
+/* No count of questions played or left (owner, 18 Sep 2026): practice is
+   endless, and the deck is the page's bookkeeping, not the player's. */
 function practiceLabel() {
-  const seen = Math.min(deckState.seen, deckState.total);
-  const pass = deckState.cycle > 1 ? ` · pass ${deckState.cycle}` : "";
-  return `Practice round · ${seen} of ${deckState.total} played${pass}`;
+  return "Practice round";
 }
 
 function today() {
@@ -678,13 +672,10 @@ async function finishRound(fresh) {
   $("summary").hidden = false;
   $("summaryEyebrow").textContent = state.mode === "daily" ? `Today's seven · ${state.day}` : practiceLabel();
   $("summaryScore").textContent = `${played}%`;
-  const left = Math.max(deckState.total - deckState.seen, 0);
   $("summaryNote").textContent = `${spent.toFixed(2)} of 7.00 spent. ` +
     (state.mode === "daily"
       ? "A new seven arrives tomorrow; practice keeps dealing new questions."
-      : left >= QUESTIONS
-        ? `${left} questions still to come before any of these return.`
-        : "The deck is down to its last few; the next round cuts a fresh one.");
+      : "Another round deals seven more you have not played.");
   $("shareNote").textContent = "";
 
   const blocks = [];
