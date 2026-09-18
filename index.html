@@ -228,7 +228,9 @@ function normalize(text) {
   let s = String(text).normalize("NFKD").replace(/\p{M}/gu, "");
   s = s.toLowerCase().replace(/ß/g, "ss").trim();
   s = s.replace(ACRONYM, (m) => m.replace(/[.·・ ]/g, ""));
-  s = s.replace(BRACKETED, " ").replace(UNCLOSED, " ").replace(EDITION, " ");
+  const stripped = s.replace(BRACKETED, " ").replace(UNCLOSED, " ");
+  s = ALNUM.test(stripped) ? stripped : s.replace(/[[\]()]/g, " ");
+  s = s.replace(EDITION, " ");
   const symbols = s.replace(/\s+/g, " ").trim();
   s = s.replace(/&/g, " and ").replace(PUNCT, " ").replace(/\s+/g, " ").trim();
   s = s.replace(/^(the|a|an)\s+/, "");
