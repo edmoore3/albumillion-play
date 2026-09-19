@@ -140,7 +140,7 @@ footer a, .how a { color:inherit; }
   <section id="how" class="how" hidden>
     <h3>How to play</h3>
     <p>Seven questions, the same seven for everyone today. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
-    <p>Practice rounds are seven at a time from the whole set, less today's seven, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
+    <p>Practice rounds are seven at a time from the whole set, less the daily questions of today and the week ahead, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
     <p>Type an answer and press Enter. Spelling does not have to be perfect: Enter corrects your guess to the answer it matches and locks it. Where a guess could be two answers ("Garfunkel"), the box offers the better known one; Enter again locks it, or change it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
     <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
   </section>
@@ -397,15 +397,23 @@ function pickRound(day) {
    come back until every other one has been played. The deck holds the ids
    still to come; when it runs out it is cut again from the whole set, minus
    the seven just played, so the join between two cycles is not a repeat
-   either. Ids the last export dropped fall out on load. Today's daily seven
-   are never dealt, so practice cannot spoil them. The key moved to v2 when
-   ids stopped being pool rows (16 Sep 2026). */
+   either. Ids the last export dropped fall out on load. The daily seven of
+   today and of the SPARED_DAYS after it are never dealt, so practice cannot
+   spoil a day the player has yet to play (the spec's Endless mode); until
+   18 Sep 2026 only today's were. The key moved to v2 when ids stopped being
+   pool rows (16 Sep 2026). */
 const DECK_KEY = "albumillion:deck:v2";
+const SPARED_DAYS = 7;
 const deckState = { rest: [] };
 
 function practiceQuestions() {
-  const daily = new Set(dailyIds(today()));
-  return INDEX.questions.filter((q) => !daily.has(q.id));
+  const spared = new Set();
+  const day = new Date();
+  for (let k = 0; k <= SPARED_DAYS; k++) {
+    for (const id of dailyIds(dayKey(day))) spared.add(id);
+    day.setDate(day.getDate() + 1);
+  }
+  return INDEX.questions.filter((q) => !spared.has(q.id));
 }
 
 function loadDeck() {
@@ -455,10 +463,10 @@ function practiceLabel() {
   return "Practice round";
 }
 
-function today() {
-  const d = new Date();
+function dayKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+const today = () => dayKey(new Date());
 const dailyKey = (day) => `albumillion:daily:${day}`;
 function storeGet(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
 function storeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } }
