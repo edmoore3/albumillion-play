@@ -209,9 +209,9 @@ const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;
 const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ESC[c]);
 
 /* ------------------------------------------------------------------
-   Matching: a port of albumillion/resolve.py. Answers arrive already
-   normalised by Python, so only what the player types is normalised
-   here, and export_static --parity checks the two agree.
+   Matching: a port of albumillion/resolve.py. Answers arrive as the
+   spellings Python chose and are normalised here, as what the player
+   types is, and export_static --parity checks the two agree.
    ------------------------------------------------------------------ */
 
 const ACRONYM = /(?<!\p{L})\p{L}[.·・](?: ?\p{L}[.·・])+(?:\p{L}(?!\p{L}))?/gu;
@@ -223,13 +223,34 @@ const EDITION_WORDS = ["remaster", "remastered", "deluxe", "deluxe edition", "ex
 const EDITION = new RegExp("(?<![\\p{L}\\p{N}_])(?:" + EDITION_WORDS.join("|") + ")(?![\\p{L}\\p{N}_])", "gu");
 const PUNCT = /[^\p{L}\p{N}_\s]/gu;
 const ALNUM = /[\p{L}\p{N}]/u;
+const HALVES = /\s(?:-{1,2}|[–—])\s/g;
+
+/* The text split at each "artist - title" separator outside brackets,
+   separators kept (resolve._halves). */
+function halves(s) {
+  const parts = [];
+  let start = 0;
+  for (const m of s.matchAll(HALVES)) {
+    const before = s.slice(0, m.index);
+    if ((before.match(/[([]/g) || []).length > (before.match(/[)\]]/g) || []).length) continue;
+    parts.push(s.slice(start, m.index), m[0]);
+    start = m.index + m[0].length;
+  }
+  parts.push(s.slice(start));
+  return parts;
+}
+
+/* Bracketed text struck out, unless that leaves no letter or digit. */
+function unbracket(s) {
+  const stripped = s.replace(BRACKETED, " ").replace(UNCLOSED, " ");
+  return ALNUM.test(stripped) ? stripped : s.replace(/[[\]()]/g, " ");
+}
 
 function normalize(text) {
   let s = String(text).normalize("NFKD").replace(/\p{M}/gu, "");
   s = s.toLowerCase().replace(/ß/g, "ss").trim();
   s = s.replace(ACRONYM, (m) => m.replace(/[.·・ ]/g, ""));
-  const stripped = s.replace(BRACKETED, " ").replace(UNCLOSED, " ");
-  s = ALNUM.test(stripped) ? stripped : s.replace(/[[\]()]/g, " ");
+  s = halves(s).map((part, i) => (i % 2 ? part : unbracket(part))).join("");
   s = s.replace(EDITION, " ");
   const symbols = s.replace(/\s+/g, " ").trim();
   s = s.replace(/&/g, " and ").replace(PUNCT, " ").replace(/\s+/g, " ").trim();
@@ -283,18 +304,33 @@ function quickRatio(a, counts, b) {
   return 2 * matches / (a.length + b.length);
 }
 
+const isShort = (form) => [...form].filter((ch) => ALNUM.test(ch)).length <= 3;
+
+/* A row is an answer's name, its percentage and, where it has any, the
+   other spellings it may be typed as. Each is normalised here, by
+   resolve.Matcher's rules: an empty form never counts, nor a short one that
+   is not the name, nor one the answer already has. Shipping Python's forms
+   instead made the build 39% bigger (18 Sep 2026); export_static.page_forms
+   is this function's twin, for --parity. */
 function prepare(payload) {
   const exact = new Map(), forms = [];
-  payload.rows.forEach(([, , normalised], index) => {
-    for (const form of normalised) {
+  payload.rows.forEach(([display, , others], index) => {
+    const own = [];
+    [display, ...(others || [])].forEach((text, position) => {
+      const form = normalize(text);
+      if (!form || (position && isShort(form)) || own.includes(form)) return;
+      own.push(form);
       forms.push([index, form]);
       if (!exact.has(form)) exact.set(form, index);
-    }
+    });
   });
   // Forms two or more answers claim, to their rows most common first. A
   // file from before 17 Sep 2026 has none.
   const shared = new Map(payload.shared || []);
-  return Object.assign(payload, { exact, forms, shared });
+  // Forms that land nothing: the genre a subgenre question names. Only a
+  // question that has some carries the list.
+  const refused = new Set(payload.refused || []);
+  return Object.assign(payload, { exact, forms, shared, refused });
 }
 
 function match(payload, typed, threshold) {
@@ -302,8 +338,8 @@ function match(payload, typed, threshold) {
   if (!target) return null;
   if (payload.exact.has(target)) return { index: payload.exact.get(target), score: 1, exact: true };
   // A form answers share is theirs to choose between (see choices), never a
-  // fuzzy hit on a third.
-  if (payload.shared.has(target)) return null;
+  // fuzzy hit on a third, and a refused form is nobody's.
+  if (payload.shared.has(target) || payload.refused.has(target)) return null;
   const counts = new Map();
   for (const ch of target) counts.set(ch, (counts.get(ch) || 0) + 1);
   let best = null;
@@ -335,7 +371,7 @@ const loaded = new Map();
 
 function loadQuestion(id) {
   if (!loaded.has(id)) {
-    loaded.set(id, fetch(`data/q/${id}.json`).then((r) => {
+    loaded.set(id, fetch(`data/q2/${id}.json`).then((r) => {
       if (!r.ok) throw new Error(`question ${id}: ${r.status}`);
       return r.json();
     }).then(prepare));
@@ -613,7 +649,9 @@ $("answerForm").addEventListener("submit", (event) => {
     showMessage("");
     return;
   }
-  showMessage(`"${typed}" was not recognised. Keep guessing.`, true);
+  showMessage(p.refused.has(normalize(typed))
+    ? `"${typed}" is the genre the question names. Name one inside it.`
+    : `"${typed}" was not recognised. Keep guessing.`, true);
   $("typed").value = "";
   $("ghost").textContent = "";
 });
@@ -945,6 +983,36 @@ window.albumillion = {
     const found = match(p, typed, INDEX.threshold);
     return { rank: found ? found.index : null, exact: !!(found && found.exact),
              choices: found ? [] : choices(p, typed) };
+  },
+  // The forms prepare made of a question, to hold against page_forms.
+  async forms(id) {
+    return (await loadQuestion(id)).forms;
+  },
+  // The whole check (HANDOFF, republishing): every case in build/parity.json
+  // and every question's forms against build/parity-forms.json, which
+  // launch.json's "site" serves beside the site. Resolves to what disagrees.
+  async parity(base = "../") {
+    const get = (name) => fetch(`${base}${name}`, { cache: "no-store" }).then((r) => r.json());
+    const [cases, digests] = await Promise.all([get("parity.json"), get("parity-forms.json")]);
+    const hex = (buf) => [...new Uint8Array(buf)].map((x) => x.toString(16).padStart(2, "0")).join("");
+    const cased = [], formed = [];
+    for (const c of cases) {
+      if (normalize(c.typed) !== c.normalized) { cased.push(c); continue; }
+      if (c.question === null) continue;
+      const r = await this.match(c.question, c.typed);
+      if (r.rank !== c.rank || r.exact !== c.exact || JSON.stringify(r.choices) !== JSON.stringify(c.choices)) cased.push(c);
+    }
+    const ids = Object.keys(digests);
+    for (let k = 0; k < ids.length; k += 12) {
+      await Promise.all(ids.slice(k, k + 12).map(async (id) => {
+        let text = "";
+        for (const [i, form] of (await loadQuestion(id)).forms) text += `${i}\t${form}\n`;
+        const made = hex(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text)));
+        if (made !== digests[id]) formed.push(id);
+        loaded.delete(id);
+      }));
+    }
+    return { cases: cases.length, casesDisagree: cased, questions: ids.length, formsDisagree: formed };
   },
 };
 
