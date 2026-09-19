@@ -139,7 +139,7 @@ footer a, .how a { color:inherit; }
 
   <section id="how" class="how" hidden>
     <h3>How to play</h3>
-    <p>Seven questions, the same seven for everyone today. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
+    <p>Seven questions, the same seven for everyone, new each day at midnight New York time. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
     <p>Practice rounds are seven at a time from the whole set, less the daily questions of today and the week ahead, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
     <p>Type an answer and press Enter. Spelling does not have to be perfect: Enter corrects your guess to the answer it matches and locks it. Where a guess could be two answers ("Garfunkel"), the box offers the better known one; Enter again locks it, or change it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
     <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
@@ -444,10 +444,8 @@ const deckState = { rest: [] };
 
 function practiceQuestions() {
   const spared = new Set();
-  const day = new Date();
   for (let k = 0; k <= SPARED_DAYS; k++) {
-    for (const id of dailyIds(dayKey(day))) spared.add(id);
-    day.setDate(day.getDate() + 1);
+    for (const id of dailyIds(addDays(today(), k))) spared.add(id);
   }
   return INDEX.questions.filter((q) => !spared.has(q.id));
 }
@@ -499,10 +497,43 @@ function practiceLabel() {
   return "Practice round";
 }
 
-function dayKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* One day for everyone, from midnight New York time, daylight saving
+   included (owner, 18 Sep 2026): friends anywhere compare the same seven,
+   and a day's results come in over 24 hours rather than 50. Until then the
+   day was the player's own date. Keys are "YYYY-MM-DD" on New York's
+   calendar, whatever the device's clock or zone says. */
+const DAY_ZONE = "America/New_York";
+const zoned = new Intl.DateTimeFormat("en-US", { timeZone: DAY_ZONE, hourCycle: "h23",
+  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+function inDayZone(ms) {
+  const part = Object.fromEntries(zoned.formatToParts(ms).map((p) => [p.type, p.value]));
+  return { key: `${part.year}-${part.month}-${part.day}`, h: +part.hour % 24, m: +part.minute, s: +part.second };
 }
-const today = () => dayKey(new Date());
+const today = () => inDayZone(Date.now()).key;
+
+/* The day `k` days after a key, by the calendar alone. */
+function addDays(key, k) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + k)).toISOString().slice(0, 10);
+}
+
+/* A key as a date for people: "18 September 2026" in their own style. */
+function dayLabel(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined,
+    { timeZone: "UTC", day: "numeric", month: "long", year: "numeric" });
+}
+
+/* When the next day starts, as an instant: New York's next midnight. On the
+   two days a year daylight saving moves, the day is 23 or 25 hours long, so
+   a first guess lands an hour off midnight and is put right. */
+function nextDayStarts() {
+  const now = Date.now(), at = inDayZone(now);
+  let t = now + ((24 - at.h) * 3600 - at.m * 60 - at.s) * 1000;
+  t -= (((inDayZone(t).h + 12) % 24) - 12) * 3600 * 1000;
+  return new Date(t);
+}
 const dailyKey = (day) => `albumillion:daily:${day}`;
 function storeGet(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
 function storeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } }
@@ -526,7 +557,7 @@ async function startRound(mode) {
   state.advancing = false;
   $("summary").hidden = true;
   $("modeLabel").textContent = mode === "daily"
-    ? `Today's seven · ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}`
+    ? `Today's seven · ${dayLabel(state.day)}`
     : practiceLabel();
   resetDisc();
   renderSide();
@@ -722,7 +753,7 @@ async function finishRound(fresh) {
   $("summaryScore").textContent = `${played}%`;
   $("summaryNote").textContent = `${spent.toFixed(2)} of 7.00 spent. ` +
     (state.mode === "daily"
-      ? "A new seven arrives tomorrow; practice keeps dealing new questions."
+      ? `A new seven arrives at ${nextDayStarts().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} your time; practice keeps dealing new questions.`
       : "Another round deals seven more you have not played.");
   $("shareNote").textContent = "";
 
