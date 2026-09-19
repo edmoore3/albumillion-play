@@ -142,7 +142,7 @@ footer a, .how a { color:inherit; }
     <p>Seven questions, the same seven for everyone, new each day at midnight New York time. Name anything that fits. Every valid answer counts; the rarer it is, the more it is worth.</p>
     <p>Practice rounds are seven at a time from the whole set, less the daily questions of today and the week ahead, dealt from a deck this browser keeps: nothing comes back until everything else has been played.</p>
     <p>Type an answer and press Enter. Spelling does not have to be perfect: Enter corrects your guess to the answer it matches and locks it. Where a guess could be two answers ("Garfunkel"), the box offers the better known one; Enter again locks it, or change it. A guess that is not recognised costs nothing but the seconds it takes, so keep guessing until something lands. Short answers get 30 seconds, "artist - title" answers 45.</p>
-    <p>Each answer earns a percentage from its rank among every valid answer: the rarest earns 100%, the most obvious 1%. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays. It reaches the label only if all seven answers earn 100%.</p>
+    <p>Each answer earns a percentage from its rank among every valid answer: the most obvious earns 1%, and an answer past the thousandth best known earns 99% however many rarer ones there are. Each question owns a seventh of the record, and your percentage decides how much of it the needle plays; at 90% and up an answer is Once In Albumillion and plays its whole seventh. Seven of them reach the label.</p>
   </section>
 
   <div class="cols">
@@ -542,6 +542,12 @@ const state = { mode: "daily", day: today(), round: [], index: 0, answers: [], p
                 timer: 0, deadline: 0, duration: 0, advancing: false,
                 pending: null };   // an answer offered for a second Enter to confirm
 
+/* How much of its seventh an answer plays (scoring.spend): its percentage,
+   or all of it when it is Once In Albumillion, the first tier, so seven of
+   them reach the label now the tier starts at 90% (owner, 18 Sep 2026). */
+const spendOf = (percent) => (percent >= INDEX.tiers[0].floor ? 1 : percent / 100);
+const spentOn = (answers) => answers.reduce((sum, a) => sum + spendOf(a.percent), 0);
+
 function labelFor(percent) {
   if (percent <= 0) return INDEX.skip;
   return INDEX.tiers.find((t) => percent >= t.floor) || INDEX.tiers[INDEX.tiers.length - 1];
@@ -728,7 +734,7 @@ function record(entry, index, percent) {
     state.advancing = false;
     state.payload = null;
     openQuestion();
-  }, index !== null && percent >= 100 ? 2600 : 1400);
+  }, index !== null && spendOf(percent) >= 1 ? 2600 : 1400);
 }
 
 /* ------------------------------------------------------------------
@@ -743,7 +749,7 @@ async function finishRound(fresh) {
   $("answerForm").hidden = true;
   $("timer").hidden = true;
   $("ghost").textContent = "";
-  const spent = state.answers.reduce((s, a) => s + a.percent, 0) / 100;
+  const spent = spentOn(state.answers);
   const played = Math.round(spent / QUESTIONS * 100);
   $("askEyebrow").textContent = "Round complete";
   $("askTitle").textContent = `${played}% of the record played`;
@@ -793,7 +799,7 @@ function resultBlock(answer, p) {
 }
 
 $("shareBtn").addEventListener("click", async () => {
-  const spent = state.answers.reduce((s, a) => s + a.percent, 0) / 100;
+  const spent = spentOn(state.answers);
   const glyphs = state.answers.map((a) => SHARE_GLYPH[labelFor(a.percent).key]).join("");
   const text = `Albumillion ${state.mode === "daily" ? state.day : "practice"} · ${Math.round(spent / QUESTIONS * 100)}%\n${glyphs}\n${location.href.split("#")[0]}`;
   try { await navigator.clipboard.writeText(text); $("shareNote").textContent = "Copied."; }
@@ -882,7 +888,7 @@ function paintDisc(d, answers, spentNow, angle) {
   const budget = (R_OUT - R_LAB) / QUESTIONS;
   let edge = R_OUT, left = spentNow, rings = "";
   for (const a of answers) {
-    const spend = a.percent / 100;
+    const spend = spendOf(a.percent);
     const width = Math.max(0, Math.min(spend, left)) * budget;
     left -= spend;
     if (width < 0.05) continue;
@@ -910,21 +916,21 @@ function resetDisc() {
 
 function drawDisc(answers) {
   const d = disc || buildDisc();
-  const spent = answers.reduce((s, a) => s + a.percent / 100, 0);
+  const spent = spentOn(answers);
   d.wrap.setAttribute("aria-label", `Needle at ${Math.round(spent / QUESTIONS * 100)} percent of the record`);
   if (motion) { cancelAnimationFrame(motion.frame); motion = null; d.wrap.classList.remove("gold"); }
   const angle = shown ? shown.angle : 0;
   const last = answers[answers.length - 1];
   const oneMore = Boolean(shown) && answers.length === shown.count + 1;
-  const turns = oneMore && last.percent > 0 ? MIN_TURNS + TURNS_PER_SPEND * last.percent / 100 : 0;
+  const turns = oneMore && last.percent > 0 ? MIN_TURNS + TURNS_PER_SPEND * spendOf(last.percent) : 0;
   if (!turns || reduceMotion.matches) {
     paintDisc(d, answers, spent, angle);
     shown = { count: answers.length, spent, angle };
-    if (oneMore && last.percent >= 100) celebrate();
+    if (oneMore && spendOf(last.percent) >= 1) celebrate();
     return;
   }
   const from = shown.spent, endAngle = angle + turns * 360, duration = SPIN_LEAD_MS + MS_PER_TURN * turns;
-  const gold = last.percent >= 100, start = performance.now();
+  const gold = spendOf(last.percent) >= 1, start = performance.now();
   motion = { frame: 0 };
   d.wrap.classList.toggle("gold", gold);
   const step = (now) => {
@@ -983,7 +989,7 @@ function renderPips() {
 function renderSide() {
   renderPips();
   drawDisc(state.answers);
-  const spent = state.answers.reduce((s, a) => s + a.percent, 0) / 100;
+  const spent = spentOn(state.answers);
   $("travel").textContent = `${Math.round(spent / QUESTIONS * 100)}%`;
   $("spent").textContent = spent.toFixed(2);
   $("answers").innerHTML = state.answers.length ? state.answers.map((a) => {
